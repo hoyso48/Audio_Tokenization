@@ -1,0 +1,20 @@
+dataset:
+  _target_: data_module.FSDataset
+
+train:
+  filelist: ./filelists/libritts_train_all.txt
+  batch_size: 32
+  shuffle: true
+
+val:
+  filelist: ./filelists/libritts_dev_all.txt
+  batch_size: 32
+  shuffle: false
+
+test:
+  filelist: ./filelists/libritts_test_all.txt
+  batch_size: 1
+  shuffle: false
+padding_idx: 0
+frame_length: 200
+min_audio_length: 16000
