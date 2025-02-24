@@ -1,13 +1,12 @@
 trainer:
   accelerator: 'gpu'
   devices: 4
-  min_steps: 1200000 
-  max_steps: 1200000
+  min_steps: 600000 
+  max_steps: 600000
   precision: '16-mixed'
   limit_val_batches: 0
   num_sanity_val_steps: 0
   accumulate_grad_batches:  1
-  strategy: 'ddp'
 
 # loss
 lambdas:

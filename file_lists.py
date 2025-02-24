@@ -1,4 +1,4 @@
-root = "/mnt/disks/persist/data/LibriTTS"
+root = "workspace/data/LibriTTS"
 
 train_list = ['train-clean-100', 'train-clean-360', 'train-other-500']
 dev_list = ['dev-clean', 'dev-other']

@@ -3,12 +3,12 @@ dataset:
 
 train:
   filelist: ./filelists/libritts_train_all.txt
-  batch_size: 32
+  batch_size: 16
   shuffle: true
 
 val:
   filelist: ./filelists/libritts_dev_all.txt
-  batch_size: 32
+  batch_size: 16
   shuffle: false
 
 test:

@@ -28,13 +28,13 @@ def train(cfg):
     datamodule = DataModule(cfg)
     lightning_module = CodecLightningModule(cfg)
     
-    if cfg.train.strategy == 'ddp':
-        strategy = DDPStrategy(find_unused_parameters=True)
-    else:
-        strategy = cfg.train.strategy
+    # if cfg.train.strategy == 'ddp':
+    #     strategy = DDPStrategy(find_unused_parameters=True)
+    # else:
+    #     strategy = cfg.train.strategy
     trainer = pl.Trainer(
         **cfg.train.trainer,
-        strategy=strategy, #DDPStrategy(find_unused_parameters=True),
+        strategy=DDPStrategy(find_unused_parameters=True),
         callbacks=callbacks,
         limit_train_batches=1.0 if not cfg.debug else 0.001,
     )
