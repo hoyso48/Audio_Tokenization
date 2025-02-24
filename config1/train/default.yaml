@@ -1,14 +1,14 @@
 trainer:
-  accelerator: 'gpu'
-  devices: 1
-  min_steps: 1200000 # 1200000
-  max_steps: 1200000 # 1200000
-  precision: 16-mixed
+  accelerator: 'tpu'
+  devices: 'auto'
+  min_steps: 1200000 
+  max_steps: 1200000
+  precision: bf16-true
   limit_val_batches: 0
   num_sanity_val_steps: 0
   accumulate_grad_batches:  1
-  resume_from_checkpoint: null
-    
+  strategy: 'auto'
+
 # loss
 lambdas:
   lambda_disc: 1.0
@@ -41,9 +41,9 @@ gen_schedule_params:
   warmup_step: 1000
   down_step: 500000
   min_lr: 1.0e-5 # this should be the final lr
-  max_lr: 5.0e-4 
+  max_lr: 1.0e-4 
 disc_schedule_params:
   warmup_step: 1000
   down_step: 500000
   min_lr: 1.0e-5 # this should be the final lr
-  max_lr: 5.0e-4 
+  max_lr: 1.0e-4 

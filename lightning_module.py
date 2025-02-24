@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import pytorch_lightning as pl
-from vq import CausalBigCodecEncoder, BigCodecEncoder, SSBigCodecEncoder, BlockCodecEncoder, CodecDecoder
+from vq import BigCodecEncoder, SSBigCodecEncoder, BlockCodecEncoder, CodecDecoder
 from module import HiFiGANMultiPeriodDiscriminator, SpecDiscriminator
 from criterions import GANLoss, MultiResolutionMelSpectrogramLoss
 from common.schedulers import WarmupLR
@@ -34,17 +34,7 @@ class CodecLightningModule(pl.LightningModule):
                         up_ratios=enccfg.up_ratios,
                         dilations=enccfg.dilations,
                         out_channels=enccfg.out_channels,
-                        blocks=enccfg.blocks
-                    )
-        elif enccfg.type == 'causal_bigcodec':
-            encoder = CausalBigCodecEncoder(
-                        ngf=enccfg.ngf,
-                        use_rnn=enccfg.use_rnn,
-                        rnn_bidirectional=enccfg.rnn_bidirectional,
-                        rnn_num_layers=enccfg.rnn_num_layers,
-                        up_ratios=enccfg.up_ratios,
-                        dilations=enccfg.dilations,
-                        out_channels=enccfg.out_channels
+                        blocks=enccfg.blocks,
                     )
         elif enccfg.type == 'ss_bigcodec':
             encoder = SSBigCodecEncoder(
@@ -53,8 +43,9 @@ class CodecLightningModule(pl.LightningModule):
                         rnn_bidirectional=enccfg.rnn_bidirectional,
                         rnn_num_layers=enccfg.rnn_num_layers,
                         up_ratios=enccfg.up_ratios,
-                        kernel_size=enccfg.kernel_size,
-                        out_channels=enccfg.out_channels
+                        kernel_sizes=enccfg.kernel_sizes,
+                        out_channels=enccfg.out_channels,
+                        causal=enccfg.causal
                     )
         else:
             encoder = BigCodecEncoder(
@@ -64,7 +55,8 @@ class CodecLightningModule(pl.LightningModule):
                         rnn_num_layers=enccfg.rnn_num_layers,
                         up_ratios=enccfg.up_ratios,
                         dilations=enccfg.dilations,
-                        out_channels=enccfg.out_channels
+                        out_channels=enccfg.out_channels,
+                        causal=enccfg.causal
                     )
         deccfg = self.cfg.model.codec_decoder
         decoder = CodecDecoder(

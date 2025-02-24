@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
-from .module import WNConv1d, WNCausalConv1d, EncoderBlock, SSEncoderBlock, CausalEncoderBlock, ResLSTM, AltBlock, Downsample
+from .module import WNConv1d, WNCausalConv1d, EncoderBlock, SSEncoderBlock, ResLSTM, AltBlock, Downsample
 from .alias_free_torch import *
 from . import activations
 
@@ -15,6 +15,7 @@ class BigCodecEncoder(nn.Module):
                 ngf=48,
                 use_rnn=True,
                 rnn_bidirectional=False,
+                causal=False,
                 rnn_num_layers=2,
                 up_ratios=(2, 2, 2, 5, 5),
                 dilations=(1, 3, 9),
@@ -24,14 +25,20 @@ class BigCodecEncoder(nn.Module):
         self.ngf = ngf
         self.up_ratios = up_ratios
 
+        if causal:
+            assert not rnn_bidirectional
+
         # Create first convolution
         d_model = ngf
-        self.block = [WNConv1d(1, d_model, kernel_size=7, padding=3)]
+        if causal:
+            self.block = [WNCausalConv1d(1, d_model, kernel_size=7, padding=6)]
+        else:
+            self.block = [WNConv1d(1, d_model, kernel_size=7, padding=3)]
 
         # Create EncoderBlocks that double channels as they downsample by `stride`
         for i, stride in enumerate(up_ratios):
             d_model *= 2
-            self.block += [EncoderBlock(d_model, stride=stride, dilations=dilations)]
+            self.block += [EncoderBlock(d_model, stride=stride, dilations=dilations, causal=causal)]
         # RNN
         if use_rnn:
             self.block += [
@@ -41,10 +48,16 @@ class BigCodecEncoder(nn.Module):
                     )
             ]
         # Create last convolution
-        self.block += [
-            Activation1d(activation=activations.SnakeBeta(d_model, alpha_logscale=True)),
-            WNConv1d(d_model, out_channels, kernel_size=3, padding=1),
-        ]
+        if causal:
+            self.block += [
+                Activation1d(activation=activations.SnakeBeta(d_model, alpha_logscale=True)),
+                WNCausalConv1d(d_model, out_channels, kernel_size=3, padding=2),
+            ]
+        else:
+            self.block += [
+                Activation1d(activation=activations.SnakeBeta(d_model, alpha_logscale=True)),
+                WNConv1d(d_model, out_channels, kernel_size=3, padding=1),
+            ]
 
         # Wrap black into nn.Sequential
         self.block = nn.Sequential(*self.block)
@@ -87,14 +100,18 @@ class SSBigCodecEncoder(nn.Module):
                 ngf=48,
                 use_rnn=True,
                 rnn_bidirectional=False,
+                causal=False,
                 rnn_num_layers=2,
                 up_ratios=(2, 2, 2, 5, 5),
-                kernel_size=(3, 3),
+                kernel_sizes=(3, 3),
                 out_channels=1024):
         super().__init__()
         self.hop_length = np.prod(up_ratios)
         self.ngf = ngf
         self.up_ratios = up_ratios
+
+        if causal:
+            assert not rnn_bidirectional
 
         # Create first convolution
         d_model = ngf
@@ -103,7 +120,7 @@ class SSBigCodecEncoder(nn.Module):
         # Create EncoderBlocks that double channels as they downsample by `stride`
         for i, stride in enumerate(up_ratios):
             d_model *= 2
-            self.block += [SSEncoderBlock(d_model, stride=stride, kernel_size=kernel_size)]
+            self.block += [SSEncoderBlock(d_model, stride=stride, kernel_sizes=kernel_sizes, causal=causal)]
         # RNN
         if use_rnn:
             self.block += [
@@ -130,78 +147,6 @@ class SSBigCodecEncoder(nn.Module):
         #     x = block(x)
         #     print(x.shape)
         # out = x
-        out = self.block(x)
-        return out
-
-    def inference(self, x):
-        return self.block(x)
-
-    def remove_weight_norm(self):
-        """Remove weight normalization module from all of the layers."""
-
-        def _remove_weight_norm(m):
-            try:
-                torch.nn.utils.remove_weight_norm(m)
-            except ValueError:  # this module didn't have weight norm
-                return
-
-        self.apply(_remove_weight_norm)
-
-    def apply_weight_norm(self):
-        """Apply weight normalization module from all of the layers."""
-
-        def _apply_weight_norm(m):
-            if isinstance(m, nn.Conv1d):
-                torch.nn.utils.weight_norm(m)
-
-        self.apply(_apply_weight_norm)
-
-    def reset_parameters(self):
-        self.apply(init_weights)
-
-class CausalBigCodecEncoder(nn.Module):
-    def __init__(self,
-                ngf=48,
-                use_rnn=True,
-                rnn_bidirectional=False,
-                rnn_num_layers=2,
-                up_ratios=(2, 2, 2, 5, 5),
-                dilations=(1, 3, 9),
-                out_channels=1024):
-        super().__init__()
-        self.hop_length = np.prod(up_ratios)
-        self.ngf = ngf
-        self.up_ratios = up_ratios
-
-        # Create first convolution
-        d_model = ngf
-        self.block = [WNCausalConv1d(1, d_model, kernel_size=7, padding=6)]
-
-        # Create EncoderBlocks that double channels as they downsample by `stride`
-        for i, stride in enumerate(up_ratios):
-            d_model *= 2
-            self.block += [CausalEncoderBlock(d_model, stride=stride, dilations=dilations)]
-        # RNN
-        if use_rnn:
-            self.block += [
-                ResLSTM(d_model,
-                        num_layers=rnn_num_layers,
-                        bidirectional=False,#rnn_bidirectional
-                    )
-            ]
-        # Create last convolution
-        self.block += [
-            Activation1d(activation=activations.SnakeBeta(d_model, alpha_logscale=True)),
-            WNCausalConv1d(d_model, out_channels, kernel_size=3, padding=2),
-        ]
-
-        # Wrap black into nn.Sequential
-        self.block = nn.Sequential(*self.block)
-        self.enc_dim = d_model
-        
-        self.reset_parameters()
-
-    def forward(self, x):
         out = self.block(x)
         return out
 
@@ -297,7 +242,7 @@ class BlockCodecEncoder(nn.Module):
             # Additional blocks
             if i < stages - 1:
                 for _ in range(blocks):
-                    block_size = 4 #up_ratios[i+1]
+                    block_size = 5 #up_ratios[i+1]
                     assert block_size <= np.prod(up_ratios[i+1:])
                     stage.append(AltBlock(
                         dim=channels[i],

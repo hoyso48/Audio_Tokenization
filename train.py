@@ -30,11 +30,11 @@ def train(cfg):
     
     trainer = pl.Trainer(
         **cfg.train.trainer,
-        strategy=DDPStrategy(find_unused_parameters=True),
+        strategy=cfg.train.strategy, #DDPStrategy(find_unused_parameters=True),
         callbacks=callbacks,
         limit_train_batches=1.0 if not cfg.debug else 0.001,
     )
-    trainer.fit(lightning_module, datamodule=datamodule, ckpt_path=cfg.train.ckpt_path)
+    trainer.fit(lightning_module, datamodule=datamodule, ckpt_path=cfg.resume_ckpt)
     print(f'Training ends, best score: {checkpoint_callback.best_model_score}, ckpt path: {checkpoint_callback.best_model_path}')
 
 if __name__ == '__main__':

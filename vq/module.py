@@ -57,12 +57,17 @@ def WNConvTranspose1d(*args, **kwargs):
     return weight_norm(nn.ConvTranspose1d(*args, **kwargs))
 
 class ResidualUnit(nn.Module):
-    def __init__(self, dim: int = 16, dilation: int = 1):
+    def __init__(self, dim: int = 16, dilation: int = 1, causal: bool = False):
         super().__init__()
-        pad = ((7 - 1) * dilation) // 2
+        if causal:
+            pad = ((7 - 1) * dilation)
+            module = WNCausalConv1d
+        else:
+            pad = ((7 - 1) * dilation) // 2
+            module = WNConv1d
         self.block = nn.Sequential(
             Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
-            WNConv1d(dim, dim, kernel_size=7, dilation=dilation, padding=pad),
+            module(dim, dim, kernel_size=7, dilation=dilation, padding=pad),
             Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
             WNConv1d(dim, dim, kernel_size=1),
         )
@@ -71,18 +76,24 @@ class ResidualUnit(nn.Module):
         return x + self.block(x)
 
 class EncoderBlock(nn.Module):
-    def __init__(self, dim: int = 16, stride: int = 1, dilations = (1, 3, 9)):
+    def __init__(self, dim: int = 16, stride: int = 1, dilations = (1, 3, 9), causal: bool = False):
         super().__init__()
-        runits = [ResidualUnit(dim // 2, dilation=d) for d in dilations]
+        runits = [ResidualUnit(dim // 2, dilation=d, causal=causal) for d in dilations]
+        if causal:
+            pad = stride
+            module = WNCausalConv1d
+        else:
+            pad = stride // 2 + stride % 2
+            module = WNConv1d
         self.block = nn.Sequential(
             *runits,
             Activation1d(activation=activations.SnakeBeta(dim//2, alpha_logscale=True)),
-            WNConv1d(
+            module(
                 dim // 2,
                 dim,
                 kernel_size=2 * stride,
                 stride=stride,
-                padding=stride // 2 + stride % 2,
+                padding=pad,
             ),
         )
 
@@ -90,12 +101,17 @@ class EncoderBlock(nn.Module):
         return self.block(x)
 
 class SSResidualUnit(nn.Module):
-    def __init__(self, dim: int = 16, kernel_size: int = 3):
+    def __init__(self, dim: int = 16, kernel_size: int = 3, causal: bool = False):
         super().__init__()
-        pad = (kernel_size - 1) // 2
+        if causal:
+            pad = kernel_size - 1
+            module = WNCausalConv1d
+        else:
+            pad = (kernel_size - 1) // 2
+            module = WNConv1d
         self.block = nn.Sequential(
             Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
-            WNConv1d(dim, dim, kernel_size=kernel_size, padding=pad),
+            module(dim, dim, kernel_size=kernel_size, padding=pad),
             Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
             WNConv1d(dim, 4*dim, kernel_size=1),
             WNConv1d(4*dim, dim, kernel_size=1),
@@ -105,9 +121,9 @@ class SSResidualUnit(nn.Module):
         return x + self.block(x)
 
 class SSEncoderBlock(nn.Module):
-    def __init__(self, dim: int = 16, stride: int = 1, kernel_size=(3, 3)):
+    def __init__(self, dim: int = 16, stride: int = 1, kernel_sizes=(3, 3), causal: bool = False):
         super().__init__()
-        runits = [SSResidualUnit(dim // 2, kernel_size=kernel_size[i]) for i in range(len(kernel_size))]
+        runits = [SSResidualUnit(dim // 2, kernel_size=kernel_sizes[i], causal=causal) for i in range(len(kernel_sizes))]
         self.block = nn.Sequential(
             *runits,
             Activation1d(activation=activations.SnakeBeta(dim//2, alpha_logscale=True)),
@@ -116,41 +132,8 @@ class SSEncoderBlock(nn.Module):
                 dim,
                 kernel_size=stride,
                 stride=stride,
-                padding=stride % 2, #should be 0 #stride // 2 + stride % 2,
+                padding=0, #should be 0 #stride // 2 + stride % 2,
             )
-        )
-
-    def forward(self, x):
-        return self.block(x)
-
-class CausalResidualUnit(nn.Module):
-    def __init__(self, dim: int = 16, dilation: int = 1):
-        super().__init__()
-        pad = ((7 - 1) * dilation)
-        self.block = nn.Sequential(
-            Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
-            WNCausalConv1d(dim, dim, kernel_size=7, dilation=dilation, padding=pad),
-            Activation1d(activation=activations.SnakeBeta(dim, alpha_logscale=True)),
-            WNCausalConv1d(dim, dim, kernel_size=1),
-        )
-
-    def forward(self, x):
-        return x + self.block(x)
-
-class CausalEncoderBlock(nn.Module):
-    def __init__(self, dim: int = 16, stride: int = 1, dilations = (1, 3, 9)):
-        super().__init__()
-        runits = [CausalResidualUnit(dim // 2, dilation=d) for d in dilations]
-        self.block = nn.Sequential(
-            *runits,
-            Activation1d(activation=activations.SnakeBeta(dim//2, alpha_logscale=True)),
-            WNCausalConv1d(
-                dim // 2,
-                dim,
-                kernel_size=2 * stride,
-                stride=stride,
-                padding=stride,#stride // 2 + stride % 2,
-            ),
         )
 
     def forward(self, x):
@@ -357,11 +340,12 @@ class BlockAttention(nn.Module):
         qkv = self.qkv(inputs)
         input_len = inputs.shape[1]
         if input_len % self.block_size != 0:
-            qkv = F.pad(qkv, (0, 0, 0, self.block_size - input_len % self.block_size, 0, 0))
+            pad_len = self.block_size - (input_len % self.block_size)
+            qkv = F.pad(qkv, (0, 0, 0, pad_len, 0, 0))
             L = qkv.shape[1]
             mask = torch.ones(L, dtype=torch.bool, device=qkv.device)
-            mask[self.block_size - input_len % self.block_size:] = False
-            mask = mask.view(1, 1, L//self.block_size, 1, self.block_size)
+            mask[input_len:] = False  # Correct fix
+            mask = mask.view(1, 1, L // self.block_size, 1, self.block_size)
         else:
             mask = None
             L = input_len

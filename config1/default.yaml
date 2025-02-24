@@ -5,6 +5,7 @@ defaults:
   - train: default
 log_dir: pl_log
 debug: false
+resume_ckpt: null # train
 ckpt: null # infer
 input_dir: null # infer
 output_dir: null # infer
