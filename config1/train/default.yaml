@@ -1,13 +1,13 @@
 trainer:
-  accelerator: 'tpu'
-  devices: 'auto'
+  accelerator: 'gpu'
+  devices: 4
   min_steps: 1200000 
   max_steps: 1200000
-  precision: bf16-true
+  precision: '16-mixed'
   limit_val_batches: 0
   num_sanity_val_steps: 0
   accumulate_grad_batches:  1
-  strategy: 'auto'
+  strategy: 'ddp'
 
 # loss
 lambdas:
